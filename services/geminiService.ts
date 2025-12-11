@@ -12,13 +12,13 @@ export const generateGodImage = async (godName: string, size: ImageSize, difficu
   let styleDescription = "";
   switch (difficulty) {
     case 'easy':
-      styleDescription = "A close-up, very clear, and traditional calendar-art style portrait. Bright, vibrant colors with distinct, easily recognizable iconographic attributes. The deity should be the sole focus, facing forward, with perfect clarity.";
+      styleDescription = "3D Animation Movie Style. Cute, charming, vibrant colors, soft lighting, clear and distinct features. Resembles a friendly character from a high-quality animated film for children.";
       break;
     case 'hard':
-      styleDescription = "An ancient, weathered stone sculpture style or a faded mural found in a lost temple. Atmospheric, mystical, with dramatic shadows and slightly abstract features. The deity should be recognizable but require close observation.";
+      styleDescription = "3D Animation Movie Style. Cinematic, dramatic lighting, detailed textures, atmospheric. Looks like a still frame from an epic fantasy animation. Mysterious, grand, and visually stunning.";
       break;
     default: // medium
-      styleDescription = "A highly detailed, majestic, and refined artistic portrait. Style: Tanjore painting with dramatic lighting and a divine aura. Focus on the face and upper body.";
+      styleDescription = "3D Animation Movie Style. Majestic, heroic, magical glowing effects, rich colors. High-quality 3D render aesthetic with a divine and powerful aura.";
       break;
   }
 
@@ -36,37 +36,39 @@ export const generateGodImage = async (godName: string, size: ImageSize, difficu
     return { img, desc };
   };
 
+  let capturedDescription = "";
+
   // ATTEMPT 1: Fast Generation (Gemini 2.5 Flash Image)
-  // This is significantly faster than Pro.
   try {
-    const prompt = `Create a respectful, artistic illustration of Hindu God ${godName}.
-    ${styleDescription}
-    Also provide a brief 1-sentence description.`;
+    const prompt = `Generate a 3D Animation Movie Style image of the Hindu God ${godName}.
+    Style: ${styleDescription}
+    Requirement: You must generate an image.
+    Also provide a brief 1-sentence description of who the deity is (mythology/significance). Do NOT describe the visual style.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: { parts: [{ text: prompt }] },
       config: {
-        // Flash does not support imageSize, but supports aspectRatio
         imageConfig: { aspectRatio: "1:1" },
       },
     });
 
     const { img, desc } = parseResponse(response);
+    if (desc) capturedDescription = desc.trim(); 
     if (img) return { imageUrl: img, description: desc.trim() };
     
-    console.warn(`Attempt 1 (Flash) failed/refused. Model response: ${desc}`);
+    console.warn(`Attempt 1 (Flash) failed to return image. Text response: ${desc}`);
   } catch (error) {
     console.warn("Attempt 1 (Flash) error:", error);
   }
 
   // ATTEMPT 2: High Quality / Search Grounding (Gemini 3 Pro Image)
-  // Fallback if Flash fails or triggers safety filters.
   try {
-    const prompt = `Generate a high-quality, respectful image of the Hindu Deity ${godName}.
-    ${styleDescription}
-    Use your search tools to ensure accurate iconography (weapons, attire, posture).
-    Also provide a brief 1-sentence description.`;
+    const prompt = `Generate a high-quality 3D Animation Movie Style image of the Hindu Deity ${godName}.
+    Style: ${styleDescription}
+    Use your search tools to ensure accurate iconography within this animation style.
+    Requirement: You must generate an image.
+    Also provide a brief 1-sentence description of who the deity is. Do NOT describe the visual style.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-image-preview',
@@ -78,13 +80,42 @@ export const generateGodImage = async (godName: string, size: ImageSize, difficu
     });
 
     const { img, desc } = parseResponse(response);
+    if (desc) capturedDescription = desc.trim();
     if (img) return { imageUrl: img, description: desc.trim() };
     
-    // If both fail, throw error to be caught by the UI
-    throw new Error(`No image data found. Model response: ${desc}`);
+    console.warn(`Attempt 2 (Pro) failed to return image. Text response: ${desc}`);
   } catch (error) {
-    console.error("Image generation failed:", error);
-    throw error;
+    console.warn("Attempt 2 (Pro) error:", error);
+  }
+
+  // ATTEMPT 3: LAST RESORT (Flash Image ONLY)
+  try {
+    console.log("Attempting Last Resort: Image Only");
+    const prompt = `Generate a 3D Animation Movie Style image of the Hindu God ${godName}.
+    Style: ${styleDescription}
+    Strict Requirement: Return ONLY the image.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts: [{ text: prompt }] },
+      config: {
+        imageConfig: { aspectRatio: "1:1" },
+      },
+    });
+
+    const { img } = parseResponse(response);
+    
+    if (img) {
+      return { 
+        imageUrl: img, 
+        description: capturedDescription || `${godName} is a revered deity in Hinduism.` 
+      };
+    }
+    
+    throw new Error(`Last resort failed.`);
+  } catch (error) {
+    console.error("All image generation attempts failed:", error);
+    throw new Error(`No image data found after all attempts. Last Description: ${capturedDescription}`);
   }
 };
 

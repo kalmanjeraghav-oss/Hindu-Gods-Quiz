@@ -29,13 +29,19 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
   const [highScore, setHighScore] = useState(0);
   const [imageLoading, setImageLoading] = useState(false);
   const [imgFadeIn, setImgFadeIn] = useState(false);
+  const [imageLoadError, setImageLoadError] = useState(false);
   
   // Fullscreen logic
   const quizRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Ref to hold the promise for the next round's data
-  const nextRoundPromise = useRef<Promise<{ currentGod: God; imageUrl: string; options: God[] }> | null>(null);
+  // Ref to hold the data for the next round
+  // Now stores text data directly + a promise for the image
+  const nextRoundRef = useRef<{ 
+      currentGod: God; 
+      options: God[]; 
+      imagePromise: Promise<{ imageUrl: string; description?: string }> 
+  } | null>(null);
 
   useEffect(() => {
     const storedScore = localStorage.getItem(`divine_quiz_highscore_${difficulty}`);
@@ -75,40 +81,31 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
     return [correctGod, ...selectedOthers].sort(() => 0.5 - Math.random());
   }, [settings.options]);
 
-  // Helper to generate data for a single round
-  const generateRoundData = useCallback(async () => {
+  // Helper to generate data for a single round (Sync + Async Promise)
+  const generateRoundData = useCallback(() => {
       const randomGod = HINDU_GODS[Math.floor(Math.random() * HINDU_GODS.length)];
       const options = getRandomOptions(randomGod);
-      const { imageUrl, description } = await generateGodImage(randomGod.names.English, imageSize, difficulty);
-      const godWithDescription = { ...randomGod, description };
-      return { currentGod: godWithDescription, options, imageUrl };
+      // Initiate image generation but don't await it here
+      const imagePromise = generateGodImage(randomGod.names.English, imageSize, difficulty);
+      
+      return { currentGod: randomGod, options, imagePromise };
   }, [difficulty, imageSize, getRandomOptions]);
-
-  // Helper to fetch data (either from preload or fresh)
-  const fetchNextRoundData = useCallback(async () => {
-      if (nextRoundPromise.current) {
-          const data = await nextRoundPromise.current;
-          nextRoundPromise.current = null; // Clear consumed promise
-          return data;
-      }
-      return await generateRoundData();
-  }, [generateRoundData]);
 
   // Helper to start preloading in background
   const triggerPreload = useCallback(() => {
-      // Don't preload if we are about to finish the game
       const nextGod = HINDU_GODS[Math.floor(Math.random() * HINDU_GODS.length)];
       const nextOptions = getRandomOptions(nextGod);
-      nextRoundPromise.current = generateGodImage(nextGod.names.English, imageSize, difficulty)
-          .then(({ imageUrl, description }) => ({ 
-              currentGod: { ...nextGod, description }, 
-              options: nextOptions, 
-              imageUrl 
-          }))
-          .catch(err => {
-              console.error("Background generation failed:", err);
-              throw err;
-          });
+      const imagePromise = generateGodImage(nextGod.names.English, imageSize, difficulty);
+      
+      // Store future data
+      nextRoundRef.current = { 
+          currentGod: nextGod, 
+          options: nextOptions, 
+          imagePromise 
+      };
+      
+      // Prevent unhandled rejection logging in console if users quit before this is consumed
+      imagePromise.catch(() => {}); 
   }, [difficulty, imageSize, getRandomOptions]);
 
   const startNewRound = useCallback(async () => {
@@ -118,95 +115,152 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
         return;
     }
 
-    // Play subtle sound if moving to next round (user interaction)
     if (gameState.totalRounds > 0) {
       playTransitionSound();
     }
 
     setImgFadeIn(false);
+    setImageLoadError(false);
+
+    // 1. Get Text Data (Instant)
+    let data;
+    if (nextRoundRef.current) {
+        data = nextRoundRef.current;
+        nextRoundRef.current = null;
+    } else {
+        data = generateRoundData();
+    }
+
+    // 2. Update State Immediatey to show Options
     setGameState(prev => ({ 
       ...prev, 
-      isLoading: true, 
-      gameStatus: 'playing', 
-      selectedOptionId: null, 
-      feedback: null,
-      imageUrl: null,
-      currentGod: null,
-      options: []
+      currentGod: data.currentGod,
+      options: data.options,
+      imageUrl: null, // Image is loading
+      isLoading: false, // UI is active (but image section loads)
+      gameStatus: 'playing',
+      selectedOptionId: null,
+      feedback: null
     }));
+    
+    // 3. Handle Image Loading
     setImageLoading(true);
 
     try {
-      const data = await fetchNextRoundData();
-
-      setGameState(prev => ({
-        ...prev,
-        currentGod: data.currentGod,
-        imageUrl: data.imageUrl,
-        options: data.options,
-        isLoading: false
-      }));
+      const { imageUrl, description } = await data.imagePromise;
+      
+      // Update state with loaded image
+      setGameState(prev => {
+        // Safety: Ensure we are still on the same god (in case of rapid skips)
+        if (prev.currentGod?.id === data.currentGod.id) {
+           return {
+               ...prev,
+               imageUrl,
+               currentGod: { ...prev.currentGod, description }
+           };
+        }
+        return prev;
+      });
     } catch (error) {
-      console.error("Failed to start round", error);
-      setGameState(prev => ({ 
-        ...prev, 
-        isLoading: false, 
-        feedback: "Failed to generate image. Please try again." 
-      }));
+      console.error("Failed to load image", error);
+      setImageLoadError(true);
     } finally {
         setImageLoading(false);
     }
-  }, [gameState.totalRounds, settings.rounds, fetchNextRoundData]);
+  }, [gameState.totalRounds, settings.rounds, generateRoundData]);
 
   const handleSkip = async () => {
     if (gameState.gameStatus !== 'playing') return;
 
     playTransitionSound();
     
-    // Increment rounds, don't change score
     const nextRound = gameState.totalRounds + 1;
-
-    // Check if this skip ends the game
     if (nextRound >= settings.rounds) {
          setGameState(prev => ({ ...prev, totalRounds: nextRound, gameStatus: 'finished' }));
          return;
     }
 
     setImgFadeIn(false);
+    setImageLoadError(false);
+
+    // Get Text Data (Instant)
+    let data;
+    if (nextRoundRef.current) {
+        data = nextRoundRef.current;
+        nextRoundRef.current = null;
+    } else {
+        data = generateRoundData();
+    }
+
     setGameState(prev => ({ 
       ...prev, 
       totalRounds: nextRound,
-      isLoading: true, 
-      gameStatus: 'playing', 
-      selectedOptionId: null, 
-      feedback: null,
+      currentGod: data.currentGod,
+      options: data.options,
       imageUrl: null,
-      currentGod: null,
-      options: []
+      isLoading: false,
+      gameStatus: 'playing',
+      selectedOptionId: null,
+      feedback: null
     }));
+    
     setImageLoading(true);
 
     try {
-        const data = await fetchNextRoundData();
-        setGameState(prev => ({
-            ...prev,
-            currentGod: data.currentGod,
-            imageUrl: data.imageUrl,
-            options: data.options,
-            isLoading: false
-        }));
+        const { imageUrl, description } = await data.imagePromise;
+        setGameState(prev => {
+            if (prev.currentGod?.id === data.currentGod.id) {
+                return {
+                    ...prev,
+                    imageUrl,
+                    currentGod: { ...prev.currentGod, description }
+                };
+            }
+            return prev;
+        });
         
-        // Trigger preload for the subsequent question since we skipped the 'revealed' phase
+        // Trigger next preload
         if (nextRound + 1 < settings.rounds) {
             triggerPreload();
         }
 
     } catch (e) {
         console.error("Skip failed", e);
-        setGameState(prev => ({ ...prev, feedback: "Error loading next question." }));
+        setImageLoadError(true);
     } finally {
         setImageLoading(false);
     }
+  };
+
+  const handleRetry = async () => {
+      playTransitionSound();
+      
+      if (!gameState.currentGod) {
+          startNewRound();
+      } else {
+          setImgFadeIn(false);
+          setImageLoadError(false);
+          setImageLoading(true);
+          setGameState(prev => ({ ...prev, imageUrl: null, feedback: null })); // Clear image to show loader
+
+          try {
+              const { imageUrl, description } = await generateGodImage(
+                  gameState.currentGod.names.English, 
+                  imageSize, 
+                  difficulty
+              );
+              setGameState(prev => ({ 
+                  ...prev, 
+                  imageUrl, 
+                  currentGod: prev.currentGod ? { ...prev.currentGod, description } : null
+              }));
+          } catch (e) {
+              console.error("Retry failed", e);
+              setImageLoadError(true);
+          } finally {
+              setImageLoading(false);
+          }
+      }
   };
 
   const restartGame = () => {
@@ -222,7 +276,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
         selectedOptionId: null,
         feedback: null
       });
-      nextRoundPromise.current = null;
+      nextRoundRef.current = null;
       // Triggers the initial useEffect below
   };
 
@@ -362,17 +416,26 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
                </svg>
                <p className="animate-pulse serif text-orange-800 font-bold">Manifesting Divine Form...</p>
             </div>
+          ) : (imageLoadError) ? (
+             <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-100 text-stone-500 p-6 text-center">
+                 <span className="text-4xl mb-4">⚠️</span>
+                 <p className="mb-4 font-bold text-stone-600">Divine vision clouded.</p>
+                 <Button onClick={handleRetry} variant="outline" className="border-orange-400 text-orange-600 hover:bg-orange-50">
+                    <span className="mr-1">↻</span> Retry Generation
+                 </Button>
+             </div>
           ) : (
             <img 
               src={gameState.imageUrl} 
               alt="Divine Form" 
               className={`w-full h-full object-cover transition-opacity duration-700 ease-in-out ${imgFadeIn ? 'opacity-100' : 'opacity-0'}`}
               onLoad={() => setImgFadeIn(true)}
+              onError={() => setImageLoadError(true)}
             />
           )}
           
           {/* Status Overlay */}
-          {gameState.feedback && (
+          {gameState.feedback && !gameState.isLoading && gameState.imageUrl && !imageLoadError && (
             <div className={`absolute bottom-0 left-0 right-0 p-4 text-white text-center backdrop-blur-md font-bold text-lg animate-in fade-in slide-in-from-bottom-4 duration-300
               ${gameState.selectedOptionId === gameState.currentGod?.id ? 'bg-green-600/80' : 'bg-red-600/80'}
             `}>
@@ -429,7 +492,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
                         }
                     }
 
-                    // Render name in selected language, fallback to English if missing
                     const displayName = god.names[language] || god.names.English;
 
                     return (
@@ -437,7 +499,8 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
                         key={god.id}
                         onClick={() => handleOptionClick(god)}
                         variant={btnVariant}
-                        disabled={gameState.gameStatus !== 'playing'}
+                        // Disable buttons while image is loading to prevent blind guessing
+                        disabled={gameState.gameStatus !== 'playing' || !gameState.imageUrl}
                         className={`h-16 text-lg serif tracking-wide ${extraClasses}`}
                     >
                         {displayName}
@@ -448,7 +511,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
             </div>
 
             {/* Skip Button */}
-            {gameState.gameStatus === 'playing' && (
+            {gameState.gameStatus === 'playing' && !gameState.isLoading && (
                 <div className="flex justify-center mt-2">
                     <Button 
                         variant="ghost" 
@@ -463,6 +526,16 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language }) => {
 
             {gameState.gameStatus === 'revealed' && (
                 <div className="mt-6 pt-6 border-t border-stone-200 animate-in fade-in zoom-in-95 duration-300">
+                    {gameState.currentGod?.description && (
+                        <div className="bg-orange-50/50 p-4 rounded-xl border border-orange-100 mb-4 text-left">
+                            <h3 className="font-bold text-orange-800 mb-2 text-xs uppercase tracking-wider flex items-center gap-1">
+                                ℹ️ Divine Knowledge
+                            </h3>
+                            <p className="text-stone-700 text-sm leading-relaxed font-serif">
+                                {gameState.currentGod?.description}
+                            </p>
+                        </div>
+                    )}
                     <Button onClick={startNewRound} className="w-full py-4 text-lg shadow-xl shadow-orange-200">
                         {gameState.totalRounds >= settings.rounds ? "Finish Game" : "Next Question"}
                     </Button>
