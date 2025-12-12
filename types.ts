@@ -30,3 +30,20 @@ export interface QuizState {
   selectedOptionId: string | null;
   feedback: string | null;
 }
+
+export interface GameHistoryEntry {
+  id: string;
+  date: Date;
+  score: number;
+  totalRounds: number;
+  difficulty: Difficulty;
+  language: Language;
+}
+
+export interface UserProfile {
+  name: string;
+  language: Language;
+  difficulty: Difficulty;
+}
+
+export type ViewState = 'welcome' | 'game' | 'history';

@@ -1,12 +1,12 @@
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
-import { ImageSize, ChatMessage, Difficulty } from "../types";
+import { ImageSize, ChatMessage, Difficulty, Language } from "../types";
 
 // Helper to ensure we have a fresh instance with the potentially updated key
 const getAIClient = (): GoogleGenAI => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
-export const generateGodImage = async (godName: string, size: ImageSize, difficulty: Difficulty): Promise<{ imageUrl: string; description?: string }> => {
+export const generateGodImage = async (godName: string, size: ImageSize, difficulty: Difficulty, language: Language = 'English'): Promise<{ imageUrl: string; description?: string }> => {
   const ai = getAIClient();
   
   let styleDescription = "";
@@ -43,7 +43,7 @@ export const generateGodImage = async (godName: string, size: ImageSize, difficu
     const prompt = `Generate a 3D Animation Movie Style image of the Hindu God ${godName}.
     Style: ${styleDescription}
     Requirement: You must generate an image.
-    Also provide a brief 1-sentence description of who the deity is (mythology/significance). Do NOT describe the visual style.`;
+    Also provide a brief 1-sentence description of who the deity is (mythology/significance) IN ${language.toUpperCase()}. Do NOT describe the visual style.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -68,7 +68,7 @@ export const generateGodImage = async (godName: string, size: ImageSize, difficu
     Style: ${styleDescription}
     Use your search tools to ensure accurate iconography within this animation style.
     Requirement: You must generate an image.
-    Also provide a brief 1-sentence description of who the deity is. Do NOT describe the visual style.`;
+    Also provide a brief 1-sentence description of who the deity is IN ${language.toUpperCase()}. Do NOT describe the visual style.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-image-preview',
