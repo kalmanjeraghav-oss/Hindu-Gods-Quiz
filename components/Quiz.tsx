@@ -572,7 +572,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
                         key={`loading-${i}`}
                         variant="secondary"
                         disabled
-                        className="h-12 text-xl flex items-center justify-center bg-stone-100/50 border border-stone-200"
+                        className="h-16 text-xl flex items-center justify-center bg-stone-100/50 border border-stone-200"
                     >
                         <span className="animate-pulse text-orange-400">🕉️</span>
                     </Button>
@@ -614,7 +614,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
                         variant={btnVariant}
                         // Disable buttons while image is loading to prevent blind guessing
                         disabled={gameState.gameStatus !== 'playing' || !gameState.imageUrl}
-                        className={`h-12 text-sm serif tracking-wide ${extraClasses}`}
+                        className={`h-16 text-xl font-bold serif tracking-wide !text-blue-900 ${extraClasses}`}
                     >
                         {displayName}
                     </Button>
@@ -644,7 +644,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
                             <h3 className="font-bold text-orange-800 mb-2 text-xs uppercase tracking-wider flex items-center gap-1">
                                 ℹ️ Divine Knowledge
                             </h3>
-                            <p className="text-stone-700 text-sm leading-relaxed font-serif">
+                            <p className="text-stone-700 text-sm leading-relaxed">
                                 {gameState.currentGod?.description}
                             </p>
                         </div>
