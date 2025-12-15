@@ -1,15 +1,6 @@
 
-import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Chat, GenerateContentResponse, Modality } from "@google/genai";
 import { ImageSize, ChatMessage, Difficulty, Language } from "../types";
-
-declare global {
-  interface Window {
-    aistudio?: {
-      hasSelectedApiKey: () => Promise<boolean>;
-      openSelectKey: () => Promise<void>;
-    };
-  }
-}
 
 // Helper to ensure we have a fresh instance with the potentially updated key
 const getAIClient = (): GoogleGenAI => {
@@ -17,15 +8,15 @@ const getAIClient = (): GoogleGenAI => {
 };
 
 export const checkApiKey = async (): Promise<boolean> => {
-  if (window.aistudio?.hasSelectedApiKey) {
-    return await window.aistudio.hasSelectedApiKey();
+  if ((window as any).aistudio?.hasSelectedApiKey) {
+    return await (window as any).aistudio.hasSelectedApiKey();
   }
   return false;
 };
 
 export const requestApiKey = async (): Promise<void> => {
-  if (window.aistudio?.openSelectKey) {
-    await window.aistudio.openSelectKey();
+  if ((window as any).aistudio?.openSelectKey) {
+    await (window as any).aistudio.openSelectKey();
   }
 };
 
@@ -159,5 +150,27 @@ export const sendMessageToChat = async (chat: Chat, message: string): Promise<st
   } catch (error) {
     console.error("Chat error:", error);
     return "Something went wrong. Please try asking again.";
+  }
+};
+
+export const generateMantraAudio = async (mantra: string): Promise<string | null> => {
+  const ai = getAIClient();
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: { parts: [{ text: `Chant with devotion: ${mantra}` }] },
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+        },
+      },
+    });
+    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
+  } catch (error) {
+    console.error("Audio generation error:", error);
+    return null;
   }
 };
