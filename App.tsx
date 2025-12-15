@@ -2,16 +2,16 @@
 import React, { useState } from 'react';
 import Quiz from './components/Quiz';
 import ChatBot from './components/ChatBot';
-import ApiKeyWall from './components/ApiKeyWall';
 import AdPlaceholder from './components/AdPlaceholder';
 import WelcomeScreen from './components/WelcomeScreen';
 import GameHistory from './components/GameHistory';
+import ApiKeyWall from './components/ApiKeyWall';
 import { ImageSize, UserProfile, ViewState, GameHistoryEntry } from './types';
 
 function App() {
-  const [hasApiKey, setHasApiKey] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [viewState, setViewState] = useState<ViewState>('welcome');
+  const [isApiKeyReady, setIsApiKeyReady] = useState(false);
   
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile>({
@@ -51,8 +51,8 @@ function App() {
     setViewState('welcome');
   };
 
-  if (!hasApiKey) {
-    return <ApiKeyWall onKeySelected={() => setHasApiKey(true)} />;
+  if (!isApiKeyReady) {
+    return <ApiKeyWall onKeySelected={() => setIsApiKeyReady(true)} />;
   }
 
   return (

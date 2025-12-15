@@ -11,6 +11,7 @@ export interface God {
   id: string;
   names: Record<string, string> & { English: string }; // Ensure English is always present
   description?: string;
+  mantra?: string;
 }
 
 export interface ChatMessage {

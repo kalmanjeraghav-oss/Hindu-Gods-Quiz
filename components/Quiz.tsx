@@ -639,6 +639,15 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
 
             {gameState.gameStatus === 'revealed' && (
                 <div className="mt-6 pt-6 border-t border-stone-200 animate-in fade-in zoom-in-95 duration-300">
+                    
+                    {/* NEW: Mantra Display */}
+                    {gameState.currentGod?.mantra && (
+                        <div className="mb-4 text-center bg-gradient-to-r from-orange-50 via-white to-orange-50 p-3 rounded-lg border border-orange-100 shadow-sm">
+                            <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest block mb-1">Sacred Mantra</span>
+                            <p className="text-lg font-serif italic text-orange-900 leading-tight">"{gameState.currentGod.mantra}"</p>
+                        </div>
+                    )}
+
                     {gameState.currentGod?.description && (
                         <div className="bg-orange-50/50 p-4 rounded-xl border border-orange-100 mb-4 text-left">
                             <h3 className="font-bold text-orange-800 mb-2 text-xs uppercase tracking-wider flex items-center gap-1">

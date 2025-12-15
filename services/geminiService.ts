@@ -1,9 +1,32 @@
+
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { ImageSize, ChatMessage, Difficulty, Language } from "../types";
+
+declare global {
+  interface Window {
+    aistudio?: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
 
 // Helper to ensure we have a fresh instance with the potentially updated key
 const getAIClient = (): GoogleGenAI => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
+};
+
+export const checkApiKey = async (): Promise<boolean> => {
+  if (window.aistudio?.hasSelectedApiKey) {
+    return await window.aistudio.hasSelectedApiKey();
+  }
+  return false;
+};
+
+export const requestApiKey = async (): Promise<void> => {
+  if (window.aistudio?.openSelectKey) {
+    await window.aistudio.openSelectKey();
+  }
 };
 
 export const generateGodImage = async (godName: string, size: ImageSize, difficulty: Difficulty, language: Language = 'English'): Promise<{ imageUrl: string; description?: string }> => {
@@ -137,21 +160,4 @@ export const sendMessageToChat = async (chat: Chat, message: string): Promise<st
     console.error("Chat error:", error);
     return "Something went wrong. Please try asking again.";
   }
-};
-
-// Check for API Key presence
-export const checkApiKey = async (): Promise<boolean> => {
-  const win = window as any;
-  if (typeof win.aistudio !== 'undefined') {
-      return await win.aistudio.hasSelectedApiKey();
-  }
-  return false;
-};
-
-// Open Key Selection
-export const requestApiKey = async (): Promise<void> => {
-   const win = window as any;
-   if (typeof win.aistudio !== 'undefined') {
-      await win.aistudio.openSelectKey();
-   }
 };
