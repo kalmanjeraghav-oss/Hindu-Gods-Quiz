@@ -2,7 +2,6 @@
 import { GoogleGenAI, Chat, GenerateContentResponse, Modality } from "@google/genai";
 import { ImageSize, ChatMessage, Difficulty, Language } from "../types";
 
-// Helper to ensure we have a fresh instance with the potentially updated key
 const getAIClient = (): GoogleGenAI => {
   return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
@@ -20,125 +19,132 @@ export const requestApiKey = async (): Promise<void> => {
   }
 };
 
+const INDIAN_ART_STYLES = [
+  "Tanjore Painting (Thanjavur) style with vibrant colors and embossed gold leaf textures",
+  "Madhubani (Mithila) art style with intricate geometrical patterns and natural pigments",
+  "Pattachitra style from Odisha with high detail, rich colors, and mythological narrative flair",
+  "Classic Raja Ravi Varma oil painting style, elegant, realistic yet divine with Victorian influence",
+  "Kangra Miniature painting style, delicate lines and poetic natural settings",
+  "Mysore Painting style with subtle colors and gesso work",
+  "Kalighat Art style, bold lines and expressive features from Bengal"
+];
+
+/**
+ * Strips away meta-labels or conversational filler often returned by AI models.
+ */
+const cleanDescription = (text: string): string => {
+  return text
+    .replace(/^(Description|Significance|Divine Knowledge|About|Note|Info|Meaning|Deity Description|Answer):\s*/i, '')
+    .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+    .trim();
+};
+
 export const generateGodImage = async (godName: string, size: ImageSize, difficulty: Difficulty, language: Language = 'English'): Promise<{ imageUrl: string; description?: string }> => {
   const ai = getAIClient();
   
   let styleDescription = "";
+  let useSearch = false;
+
   switch (difficulty) {
     case 'easy':
-      styleDescription = "3D Animation Movie Style. Cute, charming, vibrant colors, soft lighting, clear and distinct features. Resembles a friendly character from a high-quality animated film for children.";
+      styleDescription = "Professional 3D Animation Movie Style (Pixar/Disney aesthetic). High-quality 3D character render, cute, friendly, vibrant colors, expressive features, and soft cinematic lighting.";
+      break;
+    case 'medium':
+      useSearch = true;
+      const mediumStyles = [
+        "Cinematic high-definition 3D Animation Movie Style render",
+        "High-resolution realistic devotional representation, lifelike textures, professional lighting, authentic traditional photography"
+      ];
+      styleDescription = mediumStyles[Math.floor(Math.random() * mediumStyles.length)];
       break;
     case 'hard':
-      styleDescription = "3D Animation Movie Style. Cinematic, dramatic lighting, detailed textures, atmospheric. Looks like a still frame from an epic fantasy animation. Mysterious, grand, and visually stunning.";
-      break;
-    default: // medium
-      styleDescription = "3D Animation Movie Style. Majestic, heroic, magical glowing effects, rich colors. High-quality 3D render aesthetic with a divine and powerful aura.";
+      useSearch = true;
+      const randomArtStyle = INDIAN_ART_STYLES[Math.floor(Math.random() * INDIAN_ART_STYLES.length)];
+      styleDescription = `Exquisite Traditional Indian Art: ${randomArtStyle}. High artistry, refined brushwork, traditional iconography, and cultural depth.`;
       break;
   }
 
-  // Helper to extract image and description from response
   const parseResponse = (response: any) => {
     let img = "";
     let desc = "";
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        img = `data:image/png;base64,${part.inlineData.data}`;
-      } else if (part.text) {
-        desc += part.text;
+    if (response?.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          img = `data:image/png;base64,${part.inlineData.data}`;
+        } else if (part.text) {
+          desc += part.text;
+        }
       }
     }
-    return { img, desc };
+    return { img, desc: cleanDescription(desc) };
   };
 
-  let capturedDescription = "";
+  let lastDescription = "";
 
-  // ATTEMPT 1: Fast Generation (Gemini 2.5 Flash Image)
+  // Attempt 1: Target Model with Search Grounding for accurate iconography
   try {
-    const prompt = `Generate a 3D Animation Movie Style image of the Hindu God ${godName}.
-    Style: ${styleDescription}
-    Requirement: You must generate an image.
-    Also provide a brief 1-sentence description of who the deity is (mythology/significance) IN ${language.toUpperCase()}. Do NOT describe the visual style.`;
+    const modelToUse = useSearch ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+    const prompt = `Task: Generate a highly refined and artistic image of the Hindu Deity ${godName} AND a 1-sentence spiritual significance.
+    Artistic Style: ${styleDescription}
+    Iconography: Ensure accurate representation of weapons, vahanas (mounts), and mudras.
+    Description Request: Provide exactly one sentence in ${language.toUpperCase()} explaining the deity's significance. 
+    IMPORTANT: Do not include labels like "Description:" or "Significance:". Return ONLY the descriptive sentence about the deity.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: prompt }] },
-      config: {
-        imageConfig: { aspectRatio: "1:1" },
-      },
-    });
-
-    const { img, desc } = parseResponse(response);
-    if (desc) capturedDescription = desc.trim(); 
-    if (img) return { imageUrl: img, description: desc.trim() };
-    
-    console.warn(`Attempt 1 (Flash) failed to return image. Text response: ${desc}`);
-  } catch (error) {
-    console.warn("Attempt 1 (Flash) error:", error);
-  }
-
-  // ATTEMPT 2: High Quality / Search Grounding (Gemini 3 Pro Image)
-  try {
-    const prompt = `Generate a high-quality 3D Animation Movie Style image of the Hindu Deity ${godName}.
-    Style: ${styleDescription}
-    Use your search tools to ensure accurate iconography within this animation style.
-    Requirement: You must generate an image.
-    Also provide a brief 1-sentence description of who the deity is IN ${language.toUpperCase()}. Do NOT describe the visual style.`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
+      model: modelToUse,
       contents: { parts: [{ text: prompt }] },
       config: {
         imageConfig: { aspectRatio: "1:1", imageSize: size },
-        tools: [{googleSearch: {}}],
+        ...(useSearch ? { tools: [{ googleSearch: {} }] } : {}),
       },
     });
 
     const { img, desc } = parseResponse(response);
-    if (desc) capturedDescription = desc.trim();
-    if (img) return { imageUrl: img, description: desc.trim() };
-    
-    console.warn(`Attempt 2 (Pro) failed to return image. Text response: ${desc}`);
+    if (desc) lastDescription = desc;
+    if (img) return { imageUrl: img, description: lastDescription };
   } catch (error) {
-    console.warn("Attempt 2 (Pro) error:", error);
+    console.warn("Primary generation attempt failed:", error);
   }
 
-  // ATTEMPT 3: LAST RESORT (Flash Image ONLY)
+  // Attempt 2: Fallback to Flash
   try {
-    console.log("Attempting Last Resort: Image Only");
-    const prompt = `Generate a 3D Animation Movie Style image of the Hindu God ${godName}.
-    Style: ${styleDescription}
-    Strict Requirement: Return ONLY the image.`;
-
+    const fallbackPrompt = `High-quality refined artistic image of the deity ${godName} in the style: ${styleDescription}. Also include a 1-sentence description in ${language} without any labels.`;
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: prompt }] },
-      config: {
-        imageConfig: { aspectRatio: "1:1" },
-      },
+      contents: { parts: [{ text: fallbackPrompt }] },
+      config: { imageConfig: { aspectRatio: "1:1" } },
+    });
+
+    const { img, desc } = parseResponse(response);
+    if (img) return { imageUrl: img, description: desc || lastDescription || `${godName} is a revered figure in Indian spirituality.` };
+  } catch (error) {
+    console.warn("Fallback generation failed:", error);
+  }
+
+  // Attempt 3: Ultimate Fallback (Basic Manifestation)
+  try {
+    const ultraFallbackPrompt = `A beautiful and respectful painting of ${godName}.`;
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: { parts: [{ text: ultraFallbackPrompt }] },
+      config: { imageConfig: { aspectRatio: "1:1" } },
     });
 
     const { img } = parseResponse(response);
-    
-    if (img) {
-      return { 
-        imageUrl: img, 
-        description: capturedDescription || `${godName} is a revered deity in Hinduism.` 
-      };
-    }
-    
-    throw new Error(`Last resort failed.`);
+    if (img) return { imageUrl: img, description: lastDescription || `${godName} is a manifestation of the divine.` };
   } catch (error) {
-    console.error("All image generation attempts failed:", error);
-    throw new Error(`No image data found after all attempts. Last Description: ${capturedDescription}`);
+    console.error("All generation attempts failed:", error);
   }
+
+  throw new Error("Unable to manifest the image. Please try again or check your API key.");
 };
 
 export const createChatSession = () => {
   const ai = getAIClient();
   return ai.chats.create({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3-flash-preview',
     config: {
-      systemInstruction: "You are a wise and respectful expert on Hindu Mythology, Vedas, and Puranas. You help users learn about Hindu Gods. Be concise, polite, and educational. If the user asks about the current quiz image, answer based on general knowledge of that deity.",
+      systemInstruction: "You are a wise and respectful expert on Hindu Mythology. You help users learn about Hindu Gods. Be concise, polite, and educational.",
     },
   });
 };
@@ -150,27 +156,5 @@ export const sendMessageToChat = async (chat: Chat, message: string): Promise<st
   } catch (error) {
     console.error("Chat error:", error);
     return "Something went wrong. Please try asking again.";
-  }
-};
-
-export const generateMantraAudio = async (mantra: string): Promise<string | null> => {
-  const ai = getAIClient();
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: { parts: [{ text: `Chant with devotion: ${mantra}` }] },
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-        },
-      },
-    });
-    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
-  } catch (error) {
-    console.error("Audio generation error:", error);
-    return null;
   }
 };

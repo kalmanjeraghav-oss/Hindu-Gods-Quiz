@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { HINDU_GODS, DIFFICULTY_SETTINGS } from '../constants';
-import { generateGodImage, generateMantraAudio } from '../services/geminiService';
-import { playCorrectSound, playIncorrectSound, playTransitionSound, playBase64Audio } from '../services/soundService';
+import { generateGodImage } from '../services/geminiService';
+import { playCorrectSound, playIncorrectSound, playTransitionSound } from '../services/soundService';
 import { God, ImageSize, QuizState, Difficulty, Language, GameHistoryEntry } from '../types';
 import Button from './Button';
 
@@ -45,16 +45,15 @@ const getDeityTheme = (god: God | null): DeityTheme => {
 const DeityBackground: React.FC<{ theme: DeityTheme }> = ({ theme }) => {
   let gradientClass = "bg-stone-50";
   let animationClass = "";
-  let particles = null;
 
   switch (theme) {
     case 'fire':
       gradientClass = "bg-gradient-to-t from-orange-100 via-amber-50 to-white";
-      animationClass = "animate-pulse-slow"; // Gentle heat pulse
+      animationClass = "animate-pulse-slow"; 
       break;
     case 'water':
       gradientClass = "bg-gradient-to-br from-cyan-50 via-blue-50 to-white";
-      animationClass = "animate-wave-slow"; // Gentle drifting
+      animationClass = "animate-wave-slow"; 
       break;
     case 'nature':
       gradientClass = "bg-gradient-to-b from-emerald-50 via-green-50 to-stone-50";
@@ -79,7 +78,6 @@ const DeityBackground: React.FC<{ theme: DeityTheme }> = ({ theme }) => {
 
   return (
     <div className={`absolute inset-0 z-0 transition-all duration-1000 ease-in-out overflow-hidden pointer-events-none ${gradientClass} ${animationClass} opacity-40`}>
-        {/* Abstract shapes for texture */}
         <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/subtle-white-feathers.png')] mix-blend-multiply"></div>
         {theme === 'fire' && <div className="absolute bottom-0 w-full h-1/2 bg-gradient-to-t from-orange-200/20 to-transparent animate-pulse"></div>}
         {theme === 'water' && <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-100/20 to-transparent animate-pulse-slow"></div>}
@@ -107,17 +105,11 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
   const [imageLoading, setImageLoading] = useState(false);
   const [imgFadeIn, setImgFadeIn] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
-  const [isMantraPlaying, setIsMantraPlaying] = useState(false);
   
-  // Fullscreen logic
   const quizRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Track used gods to prevent repetition
   const usedGodIdsRef = useRef<Set<string>>(new Set());
-
-  // Ref to hold the data for the next round
-  // Now stores text data directly + a promise for the image
   const nextRoundRef = useRef<{ 
       currentGod: God; 
       options: God[]; 
@@ -128,8 +120,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
     const storedScore = localStorage.getItem(`divine_quiz_highscore_${difficulty}`);
     if (storedScore) {
         setHighScore(parseInt(storedScore, 10));
-    } else {
-        setHighScore(0);
     }
   }, [difficulty]);
 
@@ -154,7 +144,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
     }
   };
 
-  // Helper to get random options based on difficulty count
   const getRandomOptions = useCallback((correctGod: God): God[] => {
     const others = HINDU_GODS.filter(g => g.id !== correctGod.id);
     const shuffledOthers = [...others].sort(() => 0.5 - Math.random());
@@ -162,53 +151,39 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
     return [correctGod, ...selectedOthers].sort(() => 0.5 - Math.random());
   }, [settings.options]);
 
-  // Helper to pick a unique god that hasn't been played in this session
   const getUniqueGod = useCallback(() => {
     const availableGods = HINDU_GODS.filter(g => !usedGodIdsRef.current.has(g.id));
-    
-    // Safety check: if we run out of gods (unlikely given typical round counts),
-    // reset the history to allow repeats rather than crashing or hanging.
     if (availableGods.length === 0) {
        usedGodIdsRef.current.clear();
        const randomGod = HINDU_GODS[Math.floor(Math.random() * HINDU_GODS.length)];
        usedGodIdsRef.current.add(randomGod.id);
        return randomGod;
     }
-
     const randomGod = availableGods[Math.floor(Math.random() * availableGods.length)];
     usedGodIdsRef.current.add(randomGod.id);
     return randomGod;
   }, []);
 
-  // Helper to generate data for a single round (Sync + Async Promise)
   const generateRoundData = useCallback(() => {
       const randomGod = getUniqueGod();
       const options = getRandomOptions(randomGod);
-      // Initiate image generation but don't await it here
       const imagePromise = generateGodImage(randomGod.names.English, imageSize, difficulty, language);
-      
       return { currentGod: randomGod, options, imagePromise };
   }, [difficulty, imageSize, language, getRandomOptions, getUniqueGod]);
 
-  // Helper to start preloading in background
   const triggerPreload = useCallback(() => {
       const nextGod = getUniqueGod();
       const nextOptions = getRandomOptions(nextGod);
       const imagePromise = generateGodImage(nextGod.names.English, imageSize, difficulty, language);
-      
-      // Store future data
       nextRoundRef.current = { 
           currentGod: nextGod, 
           options: nextOptions, 
           imagePromise 
       };
-      
-      // Prevent unhandled rejection logging in console if users quit before this is consumed
       imagePromise.catch(() => {}); 
   }, [difficulty, imageSize, language, getRandomOptions, getUniqueGod]);
 
   const startNewRound = useCallback(async () => {
-    // Check if we've reached the round limit
     if (gameState.totalRounds >= settings.rounds) {
         setGameState(prev => ({ ...prev, gameStatus: 'finished' }));
         return;
@@ -220,9 +195,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
 
     setImgFadeIn(false);
     setImageLoadError(false);
-    setIsMantraPlaying(false);
 
-    // 1. Get Text Data (Instant)
     let data;
     if (nextRoundRef.current) {
         data = nextRoundRef.current;
@@ -231,32 +204,30 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
         data = generateRoundData();
     }
 
-    // 2. Update State Immediatey to show Options
     setGameState(prev => ({ 
       ...prev, 
       currentGod: data.currentGod,
       options: data.options,
-      imageUrl: null, // Image is loading
-      isLoading: false, // UI is active (but image section loads)
+      imageUrl: null, 
+      isLoading: false, 
       gameStatus: 'playing',
       selectedOptionId: null,
       feedback: null
     }));
     
-    // 3. Handle Image Loading
     setImageLoading(true);
 
     try {
-      const { imageUrl, description } = await data.imagePromise;
+      const result = await data.imagePromise;
+      if (!result) throw new Error("No image data returned.");
+      const { imageUrl, description } = result;
       
-      // Update state with loaded image
       setGameState(prev => {
-        // Safety: Ensure we are still on the same god (in case of rapid skips)
-        if (prev.currentGod?.id === data.currentGod.id) {
+        if (prev.currentGod?.id === data.currentGod?.id) {
            return {
                ...prev,
                imageUrl,
-               currentGod: { ...prev.currentGod, description }
+               currentGod: { ...prev.currentGod!, description }
            };
         }
         return prev;
@@ -273,7 +244,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
     if (gameState.gameStatus !== 'playing') return;
 
     playTransitionSound();
-    
     const nextRound = gameState.totalRounds + 1;
     if (nextRound >= settings.rounds) {
          setGameState(prev => ({ ...prev, totalRounds: nextRound, gameStatus: 'finished' }));
@@ -282,9 +252,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
 
     setImgFadeIn(false);
     setImageLoadError(false);
-    setIsMantraPlaying(false);
 
-    // Get Text Data (Instant)
     let data;
     if (nextRoundRef.current) {
         data = nextRoundRef.current;
@@ -308,23 +276,23 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
     setImageLoading(true);
 
     try {
-        const { imageUrl, description } = await data.imagePromise;
+        const result = await data.imagePromise;
+        if (!result) throw new Error("No image data returned.");
+        const { imageUrl, description } = result;
+
         setGameState(prev => {
-            if (prev.currentGod?.id === data.currentGod.id) {
+            if (prev.currentGod?.id === data.currentGod?.id) {
                 return {
                     ...prev,
                     imageUrl,
-                    currentGod: { ...prev.currentGod, description }
+                    currentGod: { ...prev.currentGod!, description }
                 };
             }
             return prev;
         });
-        
-        // Trigger next preload
         if (nextRound + 1 < settings.rounds) {
             triggerPreload();
         }
-
     } catch (e) {
         console.error("Skip failed", e);
         setImageLoadError(true);
@@ -335,22 +303,24 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
 
   const handleRetry = async () => {
       playTransitionSound();
-      
       if (!gameState.currentGod) {
           startNewRound();
       } else {
           setImgFadeIn(false);
           setImageLoadError(false);
           setImageLoading(true);
-          setGameState(prev => ({ ...prev, imageUrl: null, feedback: null })); // Clear image to show loader
+          setGameState(prev => ({ ...prev, imageUrl: null, feedback: null })); 
 
           try {
-              const { imageUrl, description } = await generateGodImage(
+              const result = await generateGodImage(
                   gameState.currentGod.names.English, 
                   imageSize, 
                   difficulty,
                   language
               );
+              if (!result) throw new Error("No image data returned.");
+              const { imageUrl, description } = result;
+
               setGameState(prev => ({ 
                   ...prev, 
                   imageUrl, 
@@ -367,7 +337,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
 
   const restartGame = () => {
       playTransitionSound();
-      usedGodIdsRef.current.clear(); // Reset used gods on restart
+      usedGodIdsRef.current.clear();
       setGameState({
         currentGod: null,
         imageUrl: null,
@@ -380,14 +350,12 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
         feedback: null
       });
       nextRoundRef.current = null;
-      // Triggers the initial useEffect below
   };
 
   const finishGameAndExit = () => {
       onGameComplete(gameState.score, settings.rounds);
   };
 
-  // Initial load or restart
   useEffect(() => {
     if (gameState.gameStatus === 'idle') {
       startNewRound();
@@ -398,17 +366,13 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
     if (gameState.gameStatus !== 'playing') return;
 
     const isCorrect = god.id === gameState.currentGod?.id;
-    
-    // Play feedback sound
     if (isCorrect) {
       playCorrectSound();
     } else {
       playIncorrectSound();
     }
 
-    // Display feedback in selected language if available, fallback to English
     const nameToDisplay = gameState.currentGod?.names[language] || gameState.currentGod?.names.English;
-
     const feedback = isCorrect 
       ? `Correct! It is ${nameToDisplay}.` 
       : `Incorrect. This is ${nameToDisplay}.`;
@@ -431,23 +395,8 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
       feedback
     }));
 
-    // Start preloading the next round immediately if game isn't over
     if (newRoundsPlayed < settings.rounds) {
         triggerPreload();
-    }
-
-    // Play Mantra for the correct god
-    if (gameState.currentGod?.mantra) {
-      setIsMantraPlaying(true);
-      generateMantraAudio(gameState.currentGod.mantra)
-        .then(audioData => {
-           if (audioData) playBase64Audio(audioData);
-           setIsMantraPlaying(false);
-        })
-        .catch(err => {
-           console.error("Failed to play mantra", err);
-           setIsMantraPlaying(false);
-        });
     }
   };
 
@@ -489,10 +438,8 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
   return (
     <div ref={quizRef} className={`w-full flex flex-col items-center transition-all duration-300 relative overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50 bg-white p-8 overflow-y-auto' : 'max-w-4xl mx-auto p-4 rounded-xl'}`}>
       
-      {/* Dynamic Background */}
       <DeityBackground theme={currentTheme} />
       
-      {/* Inject Keyframes */}
       <style>{`
         @keyframes pulse-slow {
           0%, 100% { opacity: 0.3; }
@@ -509,7 +456,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
         }
       `}</style>
 
-      {/* Control Bar */}
       <div className="w-full flex justify-between items-center mb-4 relative z-10">
           {!isFullscreen && (
             <div className="flex gap-4 items-center bg-white/80 backdrop-blur-sm px-4 py-2 rounded-xl shadow-sm border border-stone-200">
@@ -542,7 +488,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
              <button 
                 onClick={toggleFullscreen}
                 className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors bg-white/50 backdrop-blur-sm"
-                title="Toggle Fullscreen"
              >
                 {isFullscreen ? (
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0121 18.382V7.618a1 1 0 01-1.447-.894L15 7m0 13V7" /></svg>
@@ -553,10 +498,8 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
           </div>
       </div>
 
-      {/* Main Game Area */}
       <div className={`w-full grid gap-8 items-start transition-all duration-500 relative z-10 ${isFullscreen ? 'grid-cols-1 lg:grid-cols-2 max-w-6xl' : 'grid-cols-1 lg:grid-cols-2'}`}>
         
-        {/* Image Section */}
         <div className={`relative aspect-square w-full bg-stone-200 rounded-2xl overflow-hidden shadow-lg border-4 border-white group ${isFullscreen ? 'shadow-2xl' : ''}`}>
           {imageLoading || !gameState.imageUrl ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-100/90 backdrop-blur-sm text-stone-400">
@@ -586,7 +529,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
             />
           )}
           
-          {/* Status Overlay */}
           {gameState.feedback && !gameState.isLoading && gameState.imageUrl && !imageLoadError && (
             <div className={`absolute bottom-0 left-0 right-0 p-4 text-white text-center backdrop-blur-md font-bold text-lg animate-in fade-in slide-in-from-bottom-4 duration-300
               ${gameState.selectedOptionId === gameState.currentGod?.id ? 'bg-green-600/80' : 'bg-red-600/80'}
@@ -596,7 +538,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
           )}
         </div>
 
-        {/* Interaction Section */}
         <div className="flex flex-col gap-4 justify-center h-full">
             <div className="mb-2">
                 <h2 className={`font-bold serif text-stone-800 mb-1 ${isFullscreen ? 'text-4xl' : 'text-2xl'}`}>Who is this Deity?</h2>
@@ -605,7 +546,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
 
             <div className="grid gap-3 grid-cols-2">
             {gameState.isLoading ? (
-                 // Loading Placeholders with Blinking Om
                  Array.from({ length: settings.options }).map((_, i) => (
                     <Button
                         key={`loading-${i}`}
@@ -619,27 +559,17 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
             ) : (
                 gameState.options.map((god) => {
                     let btnVariant: 'primary' | 'secondary' | 'outline' | 'ghost' = 'secondary';
+                    let extraClasses = "";
                     
                     if (gameState.gameStatus === 'revealed') {
                         if (god.id === gameState.currentGod?.id) {
                             btnVariant = 'primary';
-                        } else if (god.id === gameState.selectedOptionId) {
-                            btnVariant = 'outline';
-                        } else {
-                            btnVariant = 'ghost';
-                        }
-                    }
-
-                    let extraClasses = "";
-                    if (gameState.gameStatus === 'revealed') {
-                        if (god.id === gameState.currentGod?.id) {
-                            // Correct Answer: Scale up, Green, Shadow, Ring
                             extraClasses = "!bg-green-600 !text-white !border-green-600 transform scale-105 shadow-xl ring-2 ring-green-300 ring-offset-1 z-10";
                         } else if (god.id === gameState.selectedOptionId) {
-                            // Incorrect Selected Answer: Scale down, Red
+                            btnVariant = 'outline';
                             extraClasses = "!bg-red-500 !text-white !border-red-500 transform scale-95 opacity-90";
                         } else {
-                            // Incorrect Unselected: Fade out and shrink
+                            btnVariant = 'ghost';
                             extraClasses = "opacity-40 grayscale transform scale-95";
                         }
                     }
@@ -651,7 +581,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
                         key={god.id}
                         onClick={() => handleOptionClick(god)}
                         variant={btnVariant}
-                        // Disable buttons while image is loading to prevent blind guessing
                         disabled={gameState.gameStatus !== 'playing' || !gameState.imageUrl}
                         className={`h-16 text-xl font-bold serif tracking-wide !text-blue-900 ${extraClasses}`}
                     >
@@ -662,7 +591,6 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
             )}
             </div>
 
-            {/* Skip Button */}
             {gameState.gameStatus === 'playing' && !gameState.isLoading && (
                 <div className="flex justify-center mt-2">
                     <Button 
@@ -679,11 +607,15 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
             {gameState.gameStatus === 'revealed' && (
                 <div className="mt-6 pt-6 border-t border-stone-200 animate-in fade-in zoom-in-95 duration-300 relative">
                     
-                    {/* Visual Indicator that audio is playing */}
-                    {isMantraPlaying && (
-                      <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full animate-bounce shadow-sm flex items-center gap-1 border border-orange-200">
-                          <span>🔊</span> Chanting Mantra...
-                      </div>
+                    {gameState.currentGod?.mantra && (
+                        <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100 mb-4 text-left italic">
+                            <h3 className="font-bold text-amber-800 mb-2 text-xs uppercase tracking-wider flex items-center gap-1 not-italic">
+                                🕉️ Divine Mantra
+                            </h3>
+                            <p className="text-stone-800 text-lg font-serif">
+                                "{gameState.currentGod?.mantra}"
+                            </p>
+                        </div>
                     )}
 
                     {gameState.currentGod?.description && (
