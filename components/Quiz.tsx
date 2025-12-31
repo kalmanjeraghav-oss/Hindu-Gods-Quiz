@@ -218,10 +218,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
     setImageLoading(true);
 
     try {
-      const result = await data.imagePromise;
-      if (!result) throw new Error("No image data returned.");
-      const { imageUrl, description } = result;
-      
+      const { imageUrl, description } = await data.imagePromise;
       setGameState(prev => {
         if (prev.currentGod?.id === data.currentGod?.id) {
            return {
@@ -276,10 +273,7 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
     setImageLoading(true);
 
     try {
-        const result = await data.imagePromise;
-        if (!result) throw new Error("No image data returned.");
-        const { imageUrl, description } = result;
-
+        const { imageUrl, description } = await data.imagePromise;
         setGameState(prev => {
             if (prev.currentGod?.id === data.currentGod?.id) {
                 return {
@@ -312,15 +306,12 @@ const Quiz: React.FC<QuizProps> = ({ imageSize, difficulty, language, onGameComp
           setGameState(prev => ({ ...prev, imageUrl: null, feedback: null })); 
 
           try {
-              const result = await generateGodImage(
+              const { imageUrl, description } = await generateGodImage(
                   gameState.currentGod.names.English, 
                   imageSize, 
                   difficulty,
                   language
               );
-              if (!result) throw new Error("No image data returned.");
-              const { imageUrl, description } = result;
-
               setGameState(prev => ({ 
                   ...prev, 
                   imageUrl, 
